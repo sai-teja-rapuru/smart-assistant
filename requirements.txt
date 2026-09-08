@@ -1,4 +1,6 @@
-Flask
+flask
 apscheduler
+selenium
 requests
-playwright
+pymupdf
+gunicorn
