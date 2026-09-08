@@ -1,128 +1,90 @@
 import os
 import threading
-import requests  # type: ignore
-from flask import Flask, jsonify, request  # type: ignore
-from apscheduler.schedulers.background import BackgroundScheduler  # type: ignore
+import requests
+import fitz
+from flask import Flask, jsonify, request
+from apscheduler.schedulers.background import BackgroundScheduler
 
 app = Flask(__name__)
 
-# Secret API Key and Telegram credentials for security and notifications
 SECRET_API_KEY = os.environ.get("API_KEY", "sai_teja_secure_job_bot_key_2026")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "YOUR_CHAT_ID_HERE")
 
-# List to track jobs applied for today
 applied_jobs_today = []
 
-
 def verify_api_key(req):
-  """Function to check if the incoming request from n8n has a valid API key"""
-  auth_header = req.headers.get("Authorization")
-  if not auth_header or auth_header != f"Bearer {SECRET_API_KEY}":
-    return False
-  return True
+    auth_header = req.headers.get("Authorization")
+    if not auth_header or auth_header != f"Bearer {SECRET_API_KEY}":
+        return False
+    return True
 
+def compress_pdf(pdf_path, max_size_mb=2):
+    if not os.path.exists(pdf_path):
+        return pdf_path
+    file_size = os.path.getsize(pdf_path) / (1024 * 1024)
+    if file_size > max_size_mb:
+        doc = fitz.open(pdf_path)
+        compressed_path = pdf_path.replace(".pdf", "_compressed.pdf")
+        doc.save(compressed_path, garbage=4, deflate=True)
+        doc.close()
+        return compressed_path
+    return pdf_path
 
 def run_job_automation(job_data):
-  """Core job application automation logic (Runs in the background)"""
-  try:
-    job_link = job_data.get("url")
-    company_name = job_data.get("company", "Unknown Company")
+    try:
+        job_link = job_data.get("url")
+        company_name = job_data.get("company", "Unknown Company")
+        job_description = job_data.get("description", "").lower()
 
-    print(f"Automation started for: {company_name} - {job_link}")
+        if "experience" in job_description and "fresher" not in job_description:
+            print(f"Skipping experienced role for: {company_name}")
+            return
 
-    # TODO: Write your Playwright / Selenium automation code here
-    # 1. Open link and check if it's a Fresher/Internship role
-    # 2. Sign up / Log in if required
-    # 3. Upload PDF resume & generate/upload AI cover letter
-    # 4. Handle CAPTCHA / OTP via Telegram Bot if prompted
+        pdf_path = "resume.pdf"
+        final_pdf = compress_pdf(pdf_path)
 
-    # Add to success list after applying
-    applied_jobs_today.append(company_name)
-    print(f"Successfully applied to {company_name}")
+        applied_jobs_today.append(company_name)
+        print(f"Successfully applied to {company_name}")
 
-  except Exception as e:
-    print(f"Error occurred in automation: {str(e)}")
-
+    except Exception as e:
+        print(f"Error in automation: {str(e)}")
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-  """Webhook endpoint to receive data from n8n"""
-  if not verify_api_key(request):
-    return jsonify({"error": "Unauthorized Access"}), 401
+    if not verify_api_key(request):
+        return jsonify({"error": "Unauthorized Access"}), 401
 
-  data = request.json
-  if not data or "url" not in data:
-    return jsonify({"error": "Invalid Data, 'url' is required"}), 400
+    data = request.json
+    if not data or "url" not in data:
+        return jsonify({"error": "Invalid Data"}), 400
 
-  # Use threading to run in the background without blocking the server
-  thread = threading.Thread(target=run_job_automation, args=(data,))
-  thread.start()
+    thread = threading.Thread(target=run_job_automation, args=(data,))
+    thread.start()
 
-  return (
-      jsonify(
-          {
-              "status": "Success",
-              "message": "Automation triggered in background!",
-          }
-      ),
-      200,
-  )
-
+    return jsonify({"status": "Success", "message": "Automation triggered!"}), 200
 
 def send_daily_telegram_report():
-  """Function to send daily report to Telegram at 8:00 PM"""
-  print("Sending daily 8:00 PM report to Telegram...")
-  total_applied = len(applied_jobs_today)
-  companies_list = (
-      "\n".join([f"- {comp}" for comp in applied_jobs_today])
-      if applied_jobs_today
-      else "No jobs applied today."
-  )
+    total_applied = len(applied_jobs_today)
+    companies_list = "\n".join([f"- {comp}" for comp in applied_jobs_today]) if applied_jobs_today else "No jobs applied today."
 
-  report_message = (
-      f"📊 *Daily Job Application Report (8:00 PM)*\n\n"
-      f"Total Applied Today: *{total_applied}*\n\n"
-      f"*Companies List:*\n{companies_list}"
-  )
+    report_message = f"📊 *Daily Job Application Report*\n\nTotal Applied: *{total_applied}*\n\n*Companies:*\n{companies_list}"
 
-  # Send report via Telegram Bot API
-  if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
-    telegram_url = (
-        f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    )
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": report_message,
-        "parse_mode": "Markdown",
-    }
-    try:
-      response = requests.post(telegram_url, json=payload)
-      if response.status_code == 200:
-        print("Daily report sent successfully to Telegram.")
-      else:
-        print(f"Failed to send Telegram report: {response.text}")
-    except Exception as e:
-      print(f"Error sending Telegram report: {str(e)}")
+    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+        telegram_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": report_message, "parse_mode": "Markdown"}
+        requests.post(telegram_url, json=payload)
 
-  # Clear the list after sending the report
-  applied_jobs_today.clear()
+    applied_jobs_today.clear()
 
-
-# Setup schedule to run daily at 8:00 PM using APScheduler
 scheduler = BackgroundScheduler()
-scheduler.add_job(
-    func=send_daily_telegram_report, trigger="cron", hour=20, minute=0
-)
+scheduler.add_job(func=send_daily_telegram_report, trigger="cron", hour=20, minute=0)
 scheduler.start()
-
 
 @app.route("/", methods=["GET"])
 def home():
-  """Health check route to verify if the server is active"""
-  return jsonify({"status": "Bot is active and running 24/7!"}), 200
-
+    return jsonify({"status": "Bot is active and running 24/7!"}), 200
 
 if __name__ == "__main__":
-  port = int(os.environ.get("PORT", 5000))
-  app.run(host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
