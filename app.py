@@ -348,6 +348,21 @@ def submit_input():
         return jsonify({"status": "Success", "message": "Text input received and passed to bot!"}), 200
     return jsonify({"error": "Invalid Data"}), 400
 
+# --- n8n నుండి డైలీ రిపోర్ట్ తెప్పించుకోవడానికి కొత్త రౌట్ ---
+@app.route("/report", methods=["GET"])
+def report():
+    if not verify_api_key(request):
+        return jsonify({"error": "Unauthorized Access"}), 401
+    
+    total_applied = len(applied_jobs_today)
+    report_data = {
+        "status": "Success",
+        "applicant": USER_PROFILE["full_name"],
+        "total_applied_today": total_applied,
+        "applied_companies": list(applied_jobs_today)
+    }
+    return jsonify(report_data), 200
+
 def send_daily_telegram_report():
     total_applied = len(applied_jobs_today)
     
