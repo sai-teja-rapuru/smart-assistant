@@ -4,7 +4,6 @@ import requests
 import fitz
 import time
 from flask import Flask, jsonify, request
-from apscheduler.schedulers.background import BackgroundScheduler
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait, Select
@@ -334,7 +333,7 @@ def run_job_automation(job_data):
         except:
             pass
 
-        # 5. Final Submit
+        # 5. Final Submit & Immediate Telegram Notification
         try:
             submit_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[@type='submit' or contains(text(), 'Apply') or contains(text(), 'Submit')]")))
             submit_btn.click()
@@ -346,8 +345,10 @@ def run_job_automation(job_data):
 
         applied_jobs_today.append(company_name)
         applied_jobs_history.add(unique_job_id)
+        
+        # ఇక్కడ సబ్మిట్ అయిన వెంటనే టెలిగ్రామ్‌కి ఇన్‌స్టంట్ అలర్ట్ వెళ్తుంది
         send_telegram_notification(company_name, job_title)
-        print(f"Successfully applied to {company_name} and notified via Telegram!")
+        print(f"Successfully applied to {company_name} and notified via Telegram immediately!")
 
     except Exception as e:
         print(f"Error in automation: {str(e)}")
@@ -364,7 +365,7 @@ def webhook():
     thread = threading.Thread(target=run_job_automation, args=(data,))
     thread.start()
 
-    return jsonify({"status": "Success", "message": "Job automation with IT Fresher filter, State (Andhra Pradesh) & Telegram alert triggered!"}), 200
+    return jsonify({"status": "Success", "message": "Job automation triggered, application & Telegram notification will be sent immediately upon submission!"}), 200
 
 @app.route("/submit-input", methods=["POST"])
 def submit_input():
@@ -392,49 +393,10 @@ def report():
     }
     return jsonify(report_data), 200
 
-def send_daily_telegram_report():
-    total_applied = len(applied_jobs_today)
-    
-    if applied_jobs_today:
-        sheet_rows = "\n".join([f"{i+1:<3} | {comp:<18} | Applied" for i, comp in enumerate(applied_jobs_today)])
-    else:
-        sheet_rows = "No applications recorded today."
-
-    report_message = (
-        f"📋 *Daily Job Application Sheet Report*\n\n"
-        f"👤 *Applicant:* {USER_PROFILE['full_name']}\n"
-        f"📊 *Total Applied:* {total_applied}\n\n"
-        f"*Application Log Sheet:*\n"
-        f"```text\n"
-        f"No. | Company Name       | Status\n"
-        f"----|--------------------|----------\n"
-        f"{sheet_rows}\n"
-        f"```"
-    )
-
-    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
-        telegram_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": report_message, "parse_mode": "Markdown"}
-        requests.post(telegram_url, json=payload)
-
-    applied_jobs_today.clear()
-
-def daily_twenty_minute_window():
-    print("🚀 20-minute daily job application window started...")
-    start_time = time.time()
-    while time.time() - start_time < 1200:
-        time.sleep(10)
-    print("⏹️ 20-minute daily window completed. Waiting for tomorrow.")
-
-scheduler = BackgroundScheduler()
-scheduler.add_job(func=send_daily_telegram_report, trigger="cron", hour=20, minute=0)
-scheduler.add_job(func=daily_twenty_minute_window, trigger="cron", hour=10, minute=0)
-scheduler.start()
-
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({
-        "status": "Smart Job Bot with IT Fresher filtering, Money/Fee skip check, Telegram alerts & duplicate check is active on MacBook localhost!",
+        "status": "Smart Job Bot with instant Telegram submission alerts is active on MacBook localhost!",
         "applicant": USER_PROFILE["full_name"],
         "state": USER_PROFILE["state"]
     }), 200
