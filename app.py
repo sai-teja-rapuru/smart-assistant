@@ -74,7 +74,7 @@ def compress_pdf(pdf_path, max_size_mb=2):
 
 def send_telegram_notification(company_name, job_title):
     if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
-        message = f"🚀 *Job Successfully Applied!*\n\n🏢 *Company:* {company_name}\n📌 *Role:* {job_title}\n👤 *Applicant:* {USER_PROFILE['full_name']}"
+        message = f"🚀 *Applied This Role Successfully!*\n\n🏢 *Company:* {company_name}\n📌 *Role:* {job_title}\n👤 *Applicant:* {USER_PROFILE['full_name']}"
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
         payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
         try:
@@ -346,7 +346,7 @@ def run_job_automation(job_data):
         applied_jobs_today.append(company_name)
         applied_jobs_history.add(unique_job_id)
         
-        # ఇక్కడ సబ్మిట్ అయిన వెంటనే టెలిగ్రామ్‌కి ఇన్‌స్టంట్ అలర్ట్ వెళ్తుంది
+        # సబ్మిట్ అయిన వెంటనే టెలిగ్రామ్‌కి ఇన్‌స్టంట్ అలర్ట్ వెళ్తుంది
         send_telegram_notification(company_name, job_title)
         print(f"Successfully applied to {company_name} and notified via Telegram immediately!")
 
@@ -404,4 +404,4 @@ def home():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-    
+                
