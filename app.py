@@ -3,6 +3,7 @@ import threading
 import requests
 import fitz
 import time
+import re
 from flask import Flask, jsonify, request
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -85,10 +86,15 @@ def send_telegram_notification(company_name, job_title):
 def run_job_automation(job_data):
     global latest_user_input
     try:
-        job_link = job_data.get("url")
-        company_name = job_data.get("company", "Unknown Company")
-        job_title = job_data.get("title", "Software Engineer / IT Fresher")
-        job_description = job_data.get("description", "").lower()
+        raw_input_data = job_data.get("url") or job_data.get("snippet", "")
+        
+        # మెయిల్ స్నిప్పెట్ నుండి లింక్‌ని ఎక్స్‌ట్రాక్ట్ చేయడానికి (ఒకవేళ డైరెక్ట్ లింక్ లేకపోతే లింక్డిన్ లేదా నౌకరీ హోమ్‌పేజ్‌కి వెళ్లేలా)
+        url_match = re.search(r'(https?://[^\s]+)', raw_input_data)
+        job_link = url_match.group(0) if url_match else "https://www.linkedin.com/jobs"
+        
+        company_name = job_data.get("company", "LinkedIn / Naukri Job")
+        job_title = job_data.get("title", "Data Analyst / Software Fresher")
+        job_description = raw_input_data.lower()
 
         # --- DUPLICATE APPLICATION CHECK RULE ---
         unique_job_id = f"{company_name}_{job_link}"
@@ -103,12 +109,12 @@ def run_job_automation(job_data):
             return
 
         # --- IT FRESHERS & IT ROLES FILTER RULE (Restored safely) ---
-        it_keywords = ["python", "software", "developer", "engineer", "java", "data", "analyst", "IT", "programmer", "cse"]
+        it_keywords = ["python", "software", "developer", "engineer", "java", "data", "analyst", "IT", "programmer", "cse", "apply"]
         is_it_role = any(keyword in job_description or keyword in job_title.lower() for keyword in it_keywords)
-        is_fresher_role = ("fresher" in job_description) or ("0-1" in job_description) or ("entry" in job_description) or ("trainee" in job_description) or ("experience" not in job_description)
+        is_fresher_role = ("fresher" in job_description) or ("0-1" in job_description) or ("entry" in job_description) or ("trainee" in job_description) or ("experience" not in job_description) or True
 
-        if not is_it_role or not is_fresher_role:
-            print(f"Skipping non-IT or experienced role for: {company_name} ({job_title})")
+        if not is_it_role:
+            print(f"Skipping non-IT role for: {company_name} ({job_title})")
             return
 
         pdf_path = "resume.pdf"
@@ -127,6 +133,14 @@ def run_job_automation(job_data):
         driver.get(job_link)
         wait = WebDriverWait(driver, 15)
         
+        # --- ఇక్కడ మెయిల్ బటన్ క్లిక్ చేసిన తర్వాత వచ్చే పేజీలో 'Apply' బటన్‌ని వెతికి క్లిక్ చేసే లాజిక్ ---
+        try:
+            external_apply_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[contains(translate(text(), 'APPLY', 'apply'), 'apply') or contains(@class, 'apply')]")))
+            external_apply_btn.click()
+            time.sleep(3)
+        except:
+            pass
+
         # 1. Login / Sign Up check
         try:
             login_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Login') or contains(text(), 'Sign In')]")))
@@ -364,7 +378,7 @@ def webhook():
         return jsonify({"error": "Unauthorized Access"}), 401
 
     data = request.json
-    if not data or "url" not in data:
+    if not data:
         return jsonify({"error": "Invalid Data"}), 400
 
     thread = threading.Thread(target=run_job_automation, args=(data,))
@@ -409,4 +423,4 @@ def home():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-  
+            
