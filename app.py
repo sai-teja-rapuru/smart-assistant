@@ -52,6 +52,7 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "YOUR_CHAT_ID_HERE")
 
 applied_jobs_today = []
+applied_jobs_history = set()  # Duplicate prevention rule
 latest_user_input = None
 
 def verify_api_key(req):
@@ -72,16 +73,43 @@ def compress_pdf(pdf_path, max_size_mb=2):
         return compressed_path
     return pdf_path
 
+def send_telegram_notification(company_name, job_title):
+    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+        message = f"🚀 *Job Successfully Applied!*\n\n🏢 *Company:* {company_name}\n📌 *Role:* {job_title}\n👤 *Applicant:* {USER_PROFILE['full_name']}"
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
+        try:
+            requests.post(url, json=payload)
+        except Exception as e:
+            print(f"Telegram notification error: {e}")
+
 def run_job_automation(job_data):
     global latest_user_input
     try:
         job_link = job_data.get("url")
         company_name = job_data.get("company", "Unknown Company")
+        job_title = job_data.get("title", "Software Engineer / IT Fresher")
         job_description = job_data.get("description", "").lower()
 
-        # Fresher validation filter
-        if "experience" in job_description and "fresher" not in job_description:
-            print(f"Skipping experienced role for: {company_name}")
+        # --- DUPLICATE APPLICATION CHECK RULE ---
+        unique_job_id = f"{company_name}_{job_link}"
+        if unique_job_id in applied_jobs_history:
+            print(f"Skipping duplicate application for: {company_name}")
+            return
+
+        # --- FEE / MONEY REQUIREMENT CHECK (Skip if job asks for money) ---
+        fee_keywords = ["fee", "payment", "money", "charges", "pay to apply", "registration charge", "training fee", "deposit"]
+        if any(keyword in job_description for keyword in fee_keywords):
+            print(f"Skipping job because it asks for money/fee: {company_name}")
+            return
+
+        # --- IT FRESHERS & IT ROLES FILTER RULE ---
+        it_keywords = ["python", "software", "developer", "engineer", "java", "data", "analyst", "IT", "programmer", "cse"]
+        is_it_role = any(keyword in job_description or keyword in job_title.lower() for keyword in it_keywords)
+        is_fresher_role = ("fresher" in job_description) or ("0-1" in job_description) or ("entry" in job_description) or ("trainee" in job_description) or ("experience" not in job_description)
+
+        if not is_it_role or not is_fresher_role:
+            print(f"Skipping non-IT or experienced role for: {company_name} ({job_title})")
             return
 
         pdf_path = "resume.pdf"
@@ -317,7 +345,9 @@ def run_job_automation(job_data):
         driver.quit()
 
         applied_jobs_today.append(company_name)
-        print(f"Successfully applied to {company_name}")
+        applied_jobs_history.add(unique_job_id)
+        send_telegram_notification(company_name, job_title)
+        print(f"Successfully applied to {company_name} and notified via Telegram!")
 
     except Exception as e:
         print(f"Error in automation: {str(e)}")
@@ -334,7 +364,7 @@ def webhook():
     thread = threading.Thread(target=run_job_automation, args=(data,))
     thread.start()
 
-    return jsonify({"status": "Success", "message": "Job automation with State (Andhra Pradesh) and all details triggered!"}), 200
+    return jsonify({"status": "Success", "message": "Job automation with IT Fresher filter, State (Andhra Pradesh) & Telegram alert triggered!"}), 200
 
 @app.route("/submit-input", methods=["POST"])
 def submit_input():
@@ -379,37 +409,4 @@ def send_daily_telegram_report():
         f"No. | Company Name       | Status\n"
         f"----|--------------------|----------\n"
         f"{sheet_rows}\n"
-        f"```"
-    )
-
-    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
-        telegram_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": report_message, "parse_mode": "Markdown"}
-        requests.post(telegram_url, json=payload)
-
-    applied_jobs_today.clear()
-
-def daily_twenty_minute_window():
-    print("🚀 20-minute daily job application window started...")
-    start_time = time.time()
-    while time.time() - start_time < 1200:
-        time.sleep(10)
-    print("⏹️ 20-minute daily window completed. Waiting for tomorrow.")
-
-scheduler = BackgroundScheduler()
-scheduler.add_job(func=send_daily_telegram_report, trigger="cron", hour=20, minute=0)
-scheduler.add_job(func=daily_twenty_minute_window, trigger="cron", hour=10, minute=0)
-scheduler.start()
-
-@app.route("/", methods=["GET"])
-def home():
-    return jsonify({
-        "status": "Smart Job Bot with State (Andhra Pradesh), Gender, Citizenship, OTP & Sheet Reporting is active on MacBook M5 localhost!",
-        "applicant": USER_PROFILE["full_name"],
-        "state": USER_PROFILE["state"]
-    }), 200
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
-    
+        f"
