@@ -125,13 +125,20 @@ def run_job_automation(job_data):
             print(f"Skipping job because it asks for money/fee: {company_name}")
             return
 
-        # --- IT FRESHERS & IT ROLES FILTER RULE ---
-        it_keywords = ["python", "software", "developer", "engineer", "java", "data", "analyst", "IT", "programmer", "cse"]
-        is_it_role = any(keyword in job_description or keyword in job_title.lower() for keyword in it_keywords)
-        is_fresher_role = ("fresher" in job_description) or ("0-1" in job_description) or ("entry" in job_description) or ("trainee" in job_description) or ("experience" not in job_description)
+        # --- EXTENSIVE IT & FRESHER ROLES FILTER RULE (Updated with all your requested roles) ---
+        allowed_roles = [
+            "python", "java", "software", "developer", "engineer", "full stack", 
+            "front-end", "back-end", "web", "mobile", "net", "devops", "data", 
+            "analyst", "business", "scientist", "bi", "power bi", "tableau", 
+            "sql", "tester", "qa", "sdet", "cloud", "aws", "azure", "system", 
+            "network", "security", "soc", "penetration", "ai", "machine learning", 
+            "nlp", "computer vision", "support", "scrum", "product", "fresher", "trainee", "associate", "it"
+        ]
+        
+        is_valid_role = any(role in job_description or role in job_title.lower() for role in allowed_roles)
 
-        if not is_it_role or not is_fresher_role:
-            print(f"Skipping non-IT or experienced role for: {company_name} ({job_title})")
+        if not is_valid_role:
+            print(f"Skipping non-matching role for: {company_name} ({job_title})")
             return
 
         pdf_path = "resume.pdf"
