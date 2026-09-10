@@ -409,4 +409,37 @@ def send_daily_telegram_report():
         f"No. | Company Name       | Status\n"
         f"----|--------------------|----------\n"
         f"{sheet_rows}\n"
-        f"
+        f"```"
+    )
+
+    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+        telegram_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": report_message, "parse_mode": "Markdown"}
+        requests.post(telegram_url, json=payload)
+
+    applied_jobs_today.clear()
+
+def daily_twenty_minute_window():
+    print("🚀 20-minute daily job application window started...")
+    start_time = time.time()
+    while time.time() - start_time < 1200:
+        time.sleep(10)
+    print("⏹️ 20-minute daily window completed. Waiting for tomorrow.")
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(func=send_daily_telegram_report, trigger="cron", hour=20, minute=0)
+scheduler.add_job(func=daily_twenty_minute_window, trigger="cron", hour=10, minute=0)
+scheduler.start()
+
+@app.route("/", methods=["GET"])
+def home():
+    return jsonify({
+        "status": "Smart Job Bot with IT Fresher filtering, Money/Fee skip check, Telegram alerts & duplicate check is active on MacBook localhost!",
+        "applicant": USER_PROFILE["full_name"],
+        "state": USER_PROFILE["state"]
+    }), 200
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
+    
