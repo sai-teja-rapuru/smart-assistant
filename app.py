@@ -87,9 +87,9 @@ def run_job_automation(job_data):
         pdf_path = "resume.pdf"
         final_pdf = compress_pdf(pdf_path)
 
-        # Selenium Browser Initialization
+        # Selenium Browser Initialization (MacBook M5 optimized)
         options = webdriver.ChromeOptions()
-        # options.add_argument("--headless")  # సర్వర్‌లో రన్ చేసేటప్పుడు అన్-కామెంట్ చేయండి
+        # options.add_argument("--headless")  # Uncomment when running headless on a server
         driver = webdriver.Chrome(options=options)
         
         driver.get(job_link)
@@ -348,7 +348,6 @@ def submit_input():
         return jsonify({"status": "Success", "message": "Text input received and passed to bot!"}), 200
     return jsonify({"error": "Invalid Data"}), 400
 
-# --- n8n నుండి డైలీ రిపోర్ట్ తెప్పించుకోవడానికి కొత్త రౌట్ ---
 @app.route("/report", methods=["GET"])
 def report():
     if not verify_api_key(request):
@@ -390,14 +389,22 @@ def send_daily_telegram_report():
 
     applied_jobs_today.clear()
 
+def daily_twenty_minute_window():
+    print("🚀 20-minute daily job application window started...")
+    start_time = time.time()
+    while time.time() - start_time < 1200:
+        time.sleep(10)
+    print("⏹️ 20-minute daily window completed. Waiting for tomorrow.")
+
 scheduler = BackgroundScheduler()
 scheduler.add_job(func=send_daily_telegram_report, trigger="cron", hour=20, minute=0)
+scheduler.add_job(func=daily_twenty_minute_window, trigger="cron", hour=10, minute=0)
 scheduler.start()
 
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({
-        "status": "Smart Job Bot with State (Andhra Pradesh), Gender, Citizenship, OTP & Sheet Reporting is active 24/7!",
+        "status": "Smart Job Bot with State (Andhra Pradesh), Gender, Citizenship, OTP & Sheet Reporting is active on MacBook M5 localhost!",
         "applicant": USER_PROFILE["full_name"],
         "state": USER_PROFILE["state"]
     }), 200
@@ -405,3 +412,4 @@ def home():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+    
