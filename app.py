@@ -83,16 +83,29 @@ def send_telegram_notification(company_name, job_title):
         except Exception as e:
             print(f"Telegram notification error: {e}")
 
+def send_telegram_screenshot(driver, company_name):
+    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+        try:
+            screenshot_path = "error_screenshot.png"
+            driver.save_screenshot(screenshot_path)
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+            with open(screenshot_path, "rb") as photo:
+                payload = {"chat_id": TELEGRAM_CHAT_ID, "caption": f"🚨 *Automation Error Screenshot*\nCompany: {company_name}"}
+                requests.post(url, data=payload, files={"photo": photo})
+        except Exception as e:
+            print(f"Telegram screenshot error: {e}")
+
 def run_job_automation(job_data):
     global latest_user_input
+    driver = None
+    company_name = job_data.get("company", "Unknown Company")
+    job_title = job_data.get("title", "Software Engineer / IT Fresher")
+    
     try:
-        # --- ఇక్కడ n8n నుంచి వచ్చే డేటా (url లేదా snippet) నుండి లింక్‌ని సేకరించే లాజిక్ జతచేయబడింది ---
         raw_input_data = job_data.get("url") or job_data.get("snippet", "")
         url_match = re.search(r'(https?://[^\s]+)', raw_input_data)
         job_link = url_match.group(0) if url_match else "https://www.linkedin.com/jobs"
         
-        company_name = job_data.get("company", "Unknown Company")
-        job_title = job_data.get("title", "Software Engineer / IT Fresher")
         job_description = raw_input_data.lower()
 
         # --- DUPLICATE APPLICATION CHECK RULE ---
@@ -107,7 +120,7 @@ def run_job_automation(job_data):
             print(f"Skipping job because it asks for money/fee: {company_name}")
             return
 
-        # --- IT FRESHERS & IT ROLES FILTER RULE (Restored safely) ---
+        # --- IT FRESHERS & IT ROLES FILTER RULE ---
         it_keywords = ["python", "software", "developer", "engineer", "java", "data", "analyst", "IT", "programmer", "cse"]
         is_it_role = any(keyword in job_description or keyword in job_title.lower() for keyword in it_keywords)
         is_fresher_role = ("fresher" in job_description) or ("0-1" in job_description) or ("entry" in job_description) or ("trainee" in job_description) or ("experience" not in job_description)
@@ -122,17 +135,38 @@ def run_job_automation(job_data):
         
         final_pdf = compress_pdf(pdf_path)
 
-        # Selenium Browser Initialization (MacBook M5 / Cloud optimized)
+        # Selenium Browser Initialization
         options = webdriver.ChromeOptions()
-        options.add_argument("--headless")  # Enabled for seamless server/cloud execution
+        options.add_argument("--headless")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        
         driver = webdriver.Chrome(options=options)
         
         driver.get(job_link)
         wait = WebDriverWait(driver, 15)
         
-        # --- మెయిల్ బటన్ ఓపెన్ అయ్యాక వెబ్‌సైట్‌లో 'Apply' బటన్‌ని క్లిక్ చేసే లాజిక్ ఇక్కడ ఉంది ---
+        # --- ఆటో-లాగిన్ కుక్కీస్ ఇంజెక్షన్ లాజిక్ ---
+        try:
+            cookies_env = os.environ.get("LINKEDIN_COOKIES")
+            if cookies_env:
+                driver.get("https://www.linkedin.com")
+                time.sleep(2)
+                import json
+                cookies = json.loads(cookies_env)
+                for cookie in cookies:
+                    try:
+                        driver.add_cookie(cookie)
+                    except:
+                        pass
+                driver.refresh()
+                time.sleep(3)
+                driver.get(job_link)
+        except Exception as cookie_err:
+            print(f"Cookie injection error: {cookie_err}")
+
+        # --- అప్లై బటన్ క్లిక్ చేసే లాజిక్ ---
         try:
             external_apply_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[contains(translate(text(), 'APPLY', 'apply'), 'apply') or contains(@class, 'apply')]")))
             external_apply_btn.click()
@@ -152,7 +186,6 @@ def run_job_automation(job_data):
 
         # 2. Dynamic Form Filling including State, Gender, Citizenship, Address & Details
         try:
-            # Name & Email Fields
             wait.until(EC.presence_of_element_located((By.NAME, "firstname"))).send_keys(USER_PROFILE["first_name"])
             try:
                 driver.find_element(By.NAME, "middlename").send_keys(USER_PROFILE["middle_name"])
@@ -161,7 +194,7 @@ def run_job_automation(job_data):
             driver.find_element(By.NAME, "lastname").send_keys(USER_PROFILE["last_name"])
             driver.find_element(By.NAME, "email").send_keys(USER_PROFILE["email"])
             
-            # --- State Selection ---
+            # State Selection
             try:
                 state_element = driver.find_element(By.NAME, "state")
                 if state_element.tag_name == "select":
@@ -174,7 +207,7 @@ def run_job_automation(job_data):
                 except:
                     pass
 
-            # --- Gender Selection ---
+            # Gender Selection
             try:
                 gender_element = driver.find_element(By.NAME, "gender")
                 if gender_element.tag_name == "select":
@@ -187,7 +220,7 @@ def run_job_automation(job_data):
                 except:
                     pass
 
-            # --- Citizenship / Nationality Selection ---
+            # Citizenship / Nationality Selection
             try:
                 citizen_element = driver.find_element(By.NAME, "citizenship")
                 if citizen_element.tag_name == "select":
@@ -200,7 +233,7 @@ def run_job_automation(job_data):
                 except:
                     pass
 
-            # --- Address Entry ---
+            # Address Entry
             try:
                 driver.find_element(By.NAME, "address").send_keys(USER_PROFILE["address"])
             except:
@@ -209,7 +242,7 @@ def run_job_automation(job_data):
                 except:
                     pass
 
-            # --- Pincode Entry ---
+            # Pincode Entry
             try:
                 driver.find_element(By.NAME, "pincode").send_keys(USER_PROFILE["pincode"])
             except:
@@ -218,7 +251,7 @@ def run_job_automation(job_data):
                 except:
                     pass
 
-            # --- Phone Number & Country Code ---
+            # Phone Number & Country Code
             try:
                 driver.find_element(By.NAME, "phone").send_keys(USER_PROFILE["phone"])
             except:
@@ -233,7 +266,7 @@ def run_job_automation(job_data):
             except:
                 pass
 
-            # --- Country Selection ---
+            # Country Selection
             try:
                 country_element = driver.find_element(By.NAME, "country")
                 if country_element.tag_name == "select":
@@ -243,7 +276,7 @@ def run_job_automation(job_data):
             except:
                 pass
 
-            # --- Relocation Question Handling (Yes) ---
+            # Relocation Question Handling
             try:
                 relocate_element = driver.find_element(By.XPATH, "//*[contains(translate(text(), 'RELOCATE', 'relocate'), 'relocate') or contains(translate(@name, 'RELOCATE', 'relocate'), 'relocate')]")
                 if relocate_element:
@@ -254,7 +287,7 @@ def run_job_automation(job_data):
             except:
                 pass
 
-            # --- Passport Question (No) ---
+            # Passport Question
             try:
                 passport_element = driver.find_element(By.XPATH, "//*[contains(translate(text(), 'PASSPORT', 'passport'), 'passport') or contains(translate(@name, 'PASSPORT', 'passport'), 'passport')]")
                 if passport_element:
@@ -265,7 +298,7 @@ def run_job_automation(job_data):
             except:
                 pass
 
-            # --- University Selection (JNTUA) ---
+            # University Selection
             try:
                 uni_element = driver.find_element(By.NAME, "university")
                 if uni_element.tag_name == "select":
@@ -285,14 +318,14 @@ def run_job_automation(job_data):
             except:
                 pass
 
-            # --- Academic Start and Passout Years ---
+            # Academic Start and Passout Years
             try:
                 driver.find_element(By.NAME, "start_year").send_keys(USER_PROFILE["start_year"])
                 driver.find_element(By.NAME, "passout_year").send_keys(USER_PROFILE["passout_year"])
             except:
                 pass
 
-            # --- GitHub & LinkedIn Links ---
+            # GitHub & LinkedIn Links
             try:
                 driver.find_element(By.NAME, "github").send_keys(USER_PROFILE["github"])
                 driver.find_element(By.NAME, "linkedin").send_keys(USER_PROFILE["linkedin"])
@@ -358,18 +391,25 @@ def run_job_automation(job_data):
             time.sleep(3)
         except Exception as sub_err:
             print(f"Could not click submit: {str(sub_err)}")
+            send_telegram_screenshot(driver, company_name)
 
-        driver.quit()
+        if driver:
+            driver.quit()
 
         applied_jobs_today.append(company_name)
         applied_jobs_history.add(unique_job_id)
         
-        # సబ్మిట్ అయిన వెంటనే టెలిగ్రామ్‌కి ఇన్‌స్టంట్ అలర్ట్ వెళ్తుంది
         send_telegram_notification(company_name, job_title)
         print(f"Successfully applied to {company_name} and notified via Telegram immediately!")
 
     except Exception as e:
         print(f"Error in automation: {str(e)}")
+        if driver:
+            try:
+                send_telegram_screenshot(driver, company_name)
+                driver.quit()
+            except:
+                pass
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -422,4 +462,3 @@ def home():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-                
