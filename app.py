@@ -1,14 +1,119 @@
+import os
+import threading
+import requests
+import fitz
+import time
+import re
+from flask import Flask, jsonify, request
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait, Select
+from selenium.webdriver.support import expected_conditions as EC
+
+app = Flask(__name__)
+
+# Complete user profile including State (Andhra Pradesh), Gender, Citizenship, and all details
+USER_PROFILE = {
+    "first_name": "Rapuru",
+    "middle_name": "Sai",
+    "last_name": "Teja",
+    "full_name": "Rapuru Sai Teja",
+    "email": "rapurusaiteja699@gmail.com",
+    "phone": "6305528902",
+    "country_code": "+91",
+    "country": "India",
+    "state": "Andhra Pradesh",
+    "citizenship": "Indian",
+    "gender": "Male",
+    "address": "Mekanuru (v), Gudur (m), Nellore district Andhra Pradesh, India",
+    "pincode": "524410",
+    "work_location": "India",
+    "relocate": "Yes",
+    "passport": "No",
+    "github": "https://github.com/sai-teja-rapuru",
+    "linkedin": "https://www.linkedin.com/in/rapuru-sai-teja",
+    "college": "Rami Reddy Subbarami Reddy Engineering College",
+    "university": "Jawaharlal Nehru Technological University Anantapur",
+    "department": "Computer Science and Engineering (CSE)",
+    "degree": "B.Tech",
+    "start_year": "2023",
+    "passout_year": "2027",
+    "expected_salary": "3,50,000",
+    "current_salary": "3,00,000",
+    "skills_pool": [
+        "Python", "Flask", "Selenium", "Data Analysis", "SQL", 
+        "Excel", "Pandas", "Data Visualization", "Communication", 
+        "Problem Solving", "Administrative Assistance", "JavaScript"
+    ]
+}
+
+SECRET_API_KEY = os.environ.get("API_KEY", "sai_teja_secure_job_bot_key_2026")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "YOUR_CHAT_ID_HERE")
+
+applied_jobs_today = []
+applied_jobs_history = set()  # Duplicate prevention rule
+latest_user_input = None
+
+def verify_api_key(req):
+    auth_header = req.headers.get("Authorization")
+    if not auth_header or auth_header != f"Bearer {SECRET_API_KEY}":
+        return False
+    return True
+
+def compress_pdf(pdf_path, max_size_mb=2):
+    if not os.path.exists(pdf_path):
+        return pdf_path
+    file_size = os.path.getsize(pdf_path) / (1024 * 1024)
+    if file_size > max_size_mb:
+        doc = fitz.open(pdf_path)
+        compressed_path = pdf_path.replace(".pdf", "_compressed.pdf")
+        doc.save(compressed_path, garbage=4, deflate=True)
+        doc.close()
+        return compressed_path
+    return pdf_path
+
+def send_telegram_notification(company_name, job_title):
+    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+        message = f"🚀 *Applied This Role Successfully!*\n\n🏢 *Company:* {company_name}\n📌 *Role:* {job_title}\n👤 *Applicant:* {USER_PROFILE['full_name']}"
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
+        try:
+            requests.post(url, json=payload)
+        except Exception as e:
+            print(f"Telegram notification error: {e}")
+
+def run_job_automation(job_data):
+    global latest_user_input
+    try:
+        # --- ఇక్కడ n8n నుంచి వచ్చే డేటా (url లేదా snippet) నుండి లింక్‌ని సేకరించే లాజిక్ జతచేయబడింది ---
+        raw_input_data = job_data.get("url") or job_data.get("snippet", "")
+        url_match = re.search(r'(https?://[^\s]+)', raw_input_data)
+        job_link = url_match.group(0) if url_match else "https://www.linkedin.com/jobs"
+        
+        company_name = job_data.get("company", "Unknown Company")
+        job_title = job_data.get("title", "Software Engineer / IT Fresher")
+        job_description = raw_input_data.lower()
+
+        # --- DUPLICATE APPLICATION CHECK RULE ---
+        unique_job_id = f"{company_name}_{job_link}"
+        if unique_job_id in applied_jobs_history:
+            print(f"Skipping duplicate application for: {company_name}")
+            return
+
+        # --- FEE / MONEY REQUIREMENT CHECK (Skip if job asks for money) ---
+        fee_keywords = ["fee", "payment", "money", "charges", "pay to apply", "registration charge", "training fee", "deposit"]
         if any(keyword in job_description for keyword in fee_keywords):
             print(f"Skipping job because it asks for money/fee: {company_name}")
             return
 
         # --- IT FRESHERS & IT ROLES FILTER RULE (Restored safely) ---
-        it_keywords = ["python", "software", "developer", "engineer", "java", "data", "analyst", "IT", "programmer", "cse", "apply"]
+        it_keywords = ["python", "software", "developer", "engineer", "java", "data", "analyst", "IT", "programmer", "cse"]
         is_it_role = any(keyword in job_description or keyword in job_title.lower() for keyword in it_keywords)
-        is_fresher_role = ("fresher" in job_description) or ("0-1" in job_description) or ("entry" in job_description) or ("trainee" in job_description) or ("experience" not in job_description) or True
+        is_fresher_role = ("fresher" in job_description) or ("0-1" in job_description) or ("entry" in job_description) or ("trainee" in job_description) or ("experience" not in job_description)
 
-        if not is_it_role:
-            print(f"Skipping non-IT role for: {company_name} ({job_title})")
+        if not is_it_role or not is_fresher_role:
+            print(f"Skipping non-IT or experienced role for: {company_name} ({job_title})")
             return
 
         pdf_path = "resume.pdf"
@@ -27,7 +132,7 @@
         driver.get(job_link)
         wait = WebDriverWait(driver, 15)
         
-        # --- ఇక్కడ మెయిల్ బటన్ క్లిక్ చేసిన తర్వాత వచ్చే పేజీలో 'Apply' బటన్‌ని వెతికి క్లిక్ చేసే లాజిక్ ---
+        # --- మెయిల్ బటన్ ఓపెన్ అయ్యాక వెబ్‌సైట్‌లో 'Apply' బటన్‌ని క్లిక్ చేసే లాజిక్ ఇక్కడ ఉంది ---
         try:
             external_apply_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[contains(translate(text(), 'APPLY', 'apply'), 'apply') or contains(@class, 'apply')]")))
             external_apply_btn.click()
@@ -317,4 +422,4 @@ def home():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-            
+                
