@@ -74,23 +74,28 @@ def compress_pdf(pdf_path, max_size_mb=2):
     return pdf_path
 
 def send_telegram_notification(company_name, job_title):
-    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", TELEGRAM_BOT_TOKEN)
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", TELEGRAM_CHAT_ID)
+    if bot_token and chat_id:
         message = f"🚀 *Applied This Role Successfully!*\n\n🏢 *Company:* {company_name}\n📌 *Role:* {job_title}\n👤 *Applicant:* {USER_PROFILE['full_name']}"
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        payload = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
         try:
             requests.post(url, json=payload)
         except Exception as e:
             print(f"Telegram notification error: {e}")
 
-def send_telegram_screenshot(driver, company_name):
-    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+def send_telegram_screenshot(driver, company_name, error_message):
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", TELEGRAM_BOT_TOKEN)
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", TELEGRAM_CHAT_ID)
+    if bot_token and chat_id and driver:
         try:
             screenshot_path = "error_screenshot.png"
             driver.save_screenshot(screenshot_path)
-            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+            url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
             with open(screenshot_path, "rb") as photo:
-                payload = {"chat_id": TELEGRAM_CHAT_ID, "caption": f"🚨 *Automation Error Screenshot*\nCompany: {company_name}"}
+                caption_text = f"🚨 *Automation Error Alert!*\n🏢 Company: {company_name}\n❌ Error: {str(error_message)[:100]}"
+                payload = {"chat_id": chat_id, "caption": caption_text, "parse_mode": "Markdown"}
                 requests.post(url, data=payload, files={"photo": photo})
         except Exception as e:
             print(f"Telegram screenshot error: {e}")
@@ -391,7 +396,7 @@ def run_job_automation(job_data):
             time.sleep(3)
         except Exception as sub_err:
             print(f"Could not click submit: {str(sub_err)}")
-            send_telegram_screenshot(driver, company_name)
+            send_telegram_screenshot(driver, company_name, sub_err)
 
         if driver:
             driver.quit()
@@ -406,7 +411,7 @@ def run_job_automation(job_data):
         print(f"Error in automation: {str(e)}")
         if driver:
             try:
-                send_telegram_screenshot(driver, company_name)
+                send_telegram_screenshot(driver, company_name, e)
                 driver.quit()
             except:
                 pass
